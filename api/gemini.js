@@ -1,22 +1,63 @@
-export default async function handler(req, res) {
-  const { q } = req.query;
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
-  if (!q) {
-    return res.status(400).json({ error: "الطلب غير مكتمل" });
-  }
+export default async function handler(req, res) { if (req.method !== "POST") { return res.status(405).json({ error: "الطريقة غير مدعومة" }); }
 
-  const API_KEY = "AIzaSyCncshKBdUuj5zSCTILvhXMcJrZJMw4P3U";
+const { message, base64Image } = req.body;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: q }] }]
-    })
+if (!message && !base64Image) { return res.status(400).json({ error: "الطلب غير مكتمل" }); }
+
+try { const API_KEY = process.env.GEMINI_API_KEY; if (!API_KEY) { return res.status(500).json({ error: "مفتاح API غير متوفر" }); }
+
+const genAI = new GoogleGenerativeAI(API_KEY);
+
+let responseText = "";
+
+if (base64Image) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-pro-vision",
+    safetySettings: [
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+    ]
   });
 
-  const data = await response.json();
-  const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "لا يوجد رد واضح";
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: message || "صف الصورة التالية" },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: base64Image
+            }
+          }
+        ]
+      }
+    ]
+  });
 
-  res.status(200).json({ reply });
+  responseText = result.response.text();
+} else {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-1.5-flash-latest",
+    safetySettings: [
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+    ]
+  });
+
+  const chat = model.startChat({ history: [] });
+  const result = await chat.sendMessage(message);
+  responseText = result.response.text();
 }
+
+return res.status(200).json({ reply: responseText });
+
+} catch (error) { console.error("API Error:", error); return res.status(500).json({ error: "حدث خطأ أثناء معالجة الطلب." }); } }
+
