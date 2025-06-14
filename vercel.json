@@ -1,6 +1,6 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/gemini", "dest": "/gemini.js" }
+    { "src": "/api/gemini", "dest": "/api/gemini.js" }
   ]
 }
